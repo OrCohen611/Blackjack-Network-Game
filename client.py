@@ -37,6 +37,21 @@ def start_client():
         except Exception as e:
             print(f"Error while listening for offers: {e}")
 
+def unpack_game_payload(data):
+    magic, msg_type, p_size, d_size = struct.unpack('!IbBB', data[:7])
+
+    cards = []
+    offset = 7
+    # Extract each card
+    for _ in range(p_size + d_size):
+        rank, suit = struct.unpack('!HB', data[offset:offset + 3])
+        cards.append((rank, suit))
+        offset += 3
+
+    player_hand = cards[:p_size]
+    dealer_hand = cards[p_size:]
+    return player_hand, dealer_hand
+
 
 def send_game_request(server_ip, server_port):
 
@@ -53,7 +68,7 @@ def send_game_request(server_ip, server_port):
 
         # Send the packet
         client_tcp_socket.send(request_packet)
-        print(f"Sent game request to {server_ip}:{server_port}")
+        suits_symbols = {0: 'Hearts', 1: 'Diamonds', 2: 'Clubs', 3: 'Spades'}
 
         # Continuous game loop
         while True:
@@ -62,17 +77,27 @@ def send_game_request(server_ip, server_port):
             if not data:
                 break
 
-            message = data.decode()
-            print(message, end="")
+            if len(data) >= 7 and struct.unpack('!I', data[:4])[0] == MAGIC_COOKIE_EXPECTED:
+                p_hand, d_hand = unpack_game_payload(data)
 
-            # Check if the server is asking for a move
-            if "Type 'H' for Hit or 'S' for Stand:" in message:
-                action = input().strip()
-                client_tcp_socket.send(action.encode())
+                print("\n--- Current Game State ---")
+                p_display = [f"{c[0]} of {suits_symbols.get(c[1], 'Unknown')}" for c in p_hand]
+                p_sum = sum(11 if c[0] == 1 else (10 if c[0] >= 10 else c[0]) for c in p_hand)
+                print(f"Your cards: {p_display} (Sum: {p_sum})")
+                print(f"Dealer's visible card: {d_hand[0][0]} of {suits_symbols.get(d_hand[0][1], 'Unknown')}")
+                print("------------------------------------------\n")
+            else:
+                message = data.decode(errors='ignore')
+                print(message, end="")
 
-            # If the game is over - the server will close the connection and we break
-            if "Game Over" in message:
-                break
+                # Check if the server is asking for a move
+                if "Type 'H' for Hit or 'S' for Stand:" in message:
+                    action = input().strip()
+                    client_tcp_socket.send(action.encode())
+
+                # If the game is over - the server will close the connection and we break
+                if "Game Over" in message:
+                    break
 
     except Exception as e:
         print(f"Failed to connect or send request: {e}")

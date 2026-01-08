@@ -51,7 +51,8 @@ def handle_client(client_socket, client_address):
             # Send initial cards to client
             status_msg = f"\nRound {r + 1}\nYour cards: {player_cards[0][0]},{player_cards[1][0]} (Sum: {player_sum})\n"
             status_msg += f"Dealer's visible card: {dealer_cards[0][0]}\n"
-            client_socket.send(status_msg.encode())
+            payload = pack_game_payload(player_cards, dealer_cards)
+            client_socket.send(payload)
 
             # Player turn:
             while player_sum < 21:
@@ -62,7 +63,7 @@ def handle_client(client_socket, client_address):
                     new_card = get_card()
                     player_cards.append(new_card)
                     player_sum += new_card[2]
-                    client_socket.send(f"You drew {new_card[0]}. New sum: {player_sum}\n".encode())
+                    client_socket.send(pack_game_payload(player_cards, dealer_cards))
                 else:
                     break
 
@@ -92,6 +93,15 @@ def handle_client(client_socket, client_address):
         print(f"Error with client {client_address}: {e}")
     finally:
         client_socket.close()
+
+def pack_game_payload(player_cards, dealer_cards):
+    header = struct.pack('!IbBB', MAGIC_COOKIE, 0x4, len(player_cards), len(dealer_cards))
+    cards_bytes = b""
+    # Combine both hands into one stream of cards
+    for rank, suit, value in player_cards + dealer_cards:
+        cards_bytes += struct.pack('!HB', rank, suit)
+
+    return header + cards_bytes
 
 
 def get_card():
