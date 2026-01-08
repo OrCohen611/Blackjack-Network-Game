@@ -4,11 +4,13 @@ import struct
 UDP_PORT = 13122
 MAGIC_COOKIE_EXPECTED = 0xabcddcba
 MESSAGE_TYPE_OFFER = 0x2
+MESSAGE_TYPE_REQUEST = 0x3
+TEAM_NAME = "Need-To-Choose".ljust(32, '\x00')
 
 def start_client():
     # Create a UDP socket
     client_udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    client_udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    client_udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
     # Bind the socket to the hardcoded UDP port
     client_udp_socket.bind(('', UDP_PORT))
@@ -30,8 +32,51 @@ def start_client():
                 readable_server_name = server_name.decode('utf-8').strip('\x00')
                 print(f"Received offer from {addr[0]} ({readable_server_name}), attempting to connect...")
 
+                send_game_request(addr[0], tcp_port)
+
         except Exception as e:
             print(f"Error while listening for offers: {e}")
+
+
+def send_game_request(server_ip, server_port):
+
+    try:
+        # Ask the user for the number of rounds
+        num_rounds = int(input("How many rounds do you want to play? "))
+
+        # Create a TCP socket
+        client_tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_tcp_socket.connect((server_ip, server_port))
+
+        # Pack the Request message
+        request_packet = struct.pack('!IbB32s', MAGIC_COOKIE_EXPECTED, MESSAGE_TYPE_REQUEST, num_rounds, TEAM_NAME.encode())
+
+        # Send the packet
+        client_tcp_socket.send(request_packet)
+        print(f"Sent game request to {server_ip}:{server_port}")
+
+        # Continuous game loop
+        while True:
+            # Receive data from the server
+            data = client_tcp_socket.recv(1024)
+            if not data:
+                break
+
+            message = data.decode()
+            print(message, end="")
+
+            # Check if the server is asking for a move
+            if "Type 'H' for Hit or 'S' for Stand:" in message:
+                action = input().strip()
+                client_tcp_socket.send(action.encode())
+
+            # If the game is over - the server will close the connection and we break
+            if "Game Over" in message:
+                break
+
+    except Exception as e:
+        print(f"Failed to connect or send request: {e}")
+
 
 if __name__ == "__main__":
     start_client()
