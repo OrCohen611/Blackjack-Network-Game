@@ -7,10 +7,14 @@ import random
 UDP_PORT = 13122
 MAGIC_COOKIE = 0xabcddcba
 MESSAGE_TYPE_OFFER = 0x2
-SERVER_NAME = "Need-To-Choose".ljust(32, '\x00')
+SERVER_NAME = "Nave's-Angels".ljust(32, '\x00')
 
 
 def send_udp_offers(tcp_port):
+    """
+    handle the discovery phase of the protocol.
+    runs in a background thread and broadcasts an 'Offer' message every second
+    """
     # Create a UDP socket for broadcasting
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -30,19 +34,29 @@ def send_udp_offers(tcp_port):
             print(f"Error sending UDP offer: {e}")
 
 def handle_client(client_socket, client_address):
+    """
+    This function handles the entire game session for a single connected client.
+    It runs in its own thread to allow multiple clients to play simultaneously.
+    """
     try:
-        # Receive request packet
+        # Receive the initial request packet from the client
         request_data = client_socket.recv(38)
         if len(request_data) < 38: return
+
+        # Unpack the binary data using the protocol format (!IbB32s)
         magic_cookie, msg_type, num_rounds, team_name = struct.unpack('!IbB32s', request_data)
 
+        # remove null bytes and decode to string
         team_name_str = team_name.decode('utf-8').strip('\x00')
         print(f"Starting {num_rounds} rounds with team: {team_name_str}")
 
+        # Start the game loop for the requested number of rounds
         for r in range(num_rounds):
+            # Deal initial cards
             player_cards = [get_card(), get_card()]
             dealer_cards = [get_card(), get_card()]
 
+            # Calculate the initial sums
             player_sum = calculate_hand_value(player_cards)
             dealer_sum = calculate_hand_value(dealer_cards)
 
@@ -56,28 +70,39 @@ def handle_client(client_socket, client_address):
 
             # Player turn:
             while player_sum < 21:
+                # Ask the player what they want to do
                 client_socket.send(b"Type 'H' for Hit or 'S' for Stand: ")
                 choice = client_socket.recv(1024).decode().strip().lower()
 
                 if choice == 'h':
+                    # Player chose Hit: Draw a new card
                     new_card = get_card()
                     player_cards.append(new_card)
+
+                    # Recalculate the sum to check if they busted or got 21
                     player_sum = calculate_hand_value(player_cards)
+                    # Send the updated board state
                     client_socket.send(pack_game_payload(player_cards, dealer_cards))
                     time.sleep(0.1)
                 else:
+                    # Player chose Stand: Exit the loop and move to dealer's turn
                     break
 
             # Dealer turn:
             if player_sum > 21:
+                # If the player went over 21, they lose immediately (Bust)
                 client_socket.send(b"Bust! You lose this round.\n")
             else:
+                # reveal the dealer's hidden card
                 client_socket.send(f"Dealer reveals second card: {dealer_cards[1][0]}. Total: {dealer_sum}\n".encode())
 
+                # The dealer must hit until they reach at least 17
                 while dealer_sum < 17:
                     new_card = get_card()
                     dealer_cards.append(new_card)
                     dealer_sum = calculate_hand_value(dealer_cards)
+
+                    # Inform the client about the dealer's new card
                     client_socket.send(f"Dealer draws {new_card[0]}. Dealer sum: {dealer_sum}\n".encode())
 
                 # Determine winner:
@@ -88,16 +113,24 @@ def handle_client(client_socket, client_address):
                 else:
                     client_socket.send(b"It's a tie!\n")
 
+            # Small delay between rounds so the messages don't get mixed up
             time.sleep(0.1)
 
+        # End of game
         client_socket.send(b"\nGame Over. Thanks for playing!\n")
 
     except Exception as e:
+        # Handle unexpected errors
         print(f"Error with client {client_address}: {e}")
     finally:
+        # Always close the socket
         client_socket.close()
 
 def pack_game_payload(player_cards, dealer_cards):
+    """
+    Serialize the game state into a binary packet
+    that the client can understand based on our protocol
+    """
     header = struct.pack('!IbBB', MAGIC_COOKIE, 0x4, len(player_cards), len(dealer_cards))
     cards_bytes = b""
     # Combine both hands into one stream of cards
@@ -108,17 +141,27 @@ def pack_game_payload(player_cards, dealer_cards):
 
 
 def get_card():
+    """
+    Helper function to generate a random card.
+    It simulates drawing from an infinite deck.
+    """
+    # generate a random number for the Rank (1-13) and the Suit (0-3)
     rank = random.randint(1, 13)
     suit = random.randint(0, 3)
 
+    # calculate the card's value for the game logic
     value = 11 if rank == 1 else (10 if rank >= 10 else rank)
     return rank, suit, value
 
 
 def calculate_hand_value(cards):
+    """
+    Function that calculates the total sum of a hand
+    """
     value = 0
     aces = 0
 
+    # iterate through the cards to calculate the initial sum
     for _, _, card_val in cards:
         value += card_val
         if card_val == 11:
