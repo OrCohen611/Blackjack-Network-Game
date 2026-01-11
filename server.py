@@ -20,8 +20,6 @@ def send_udp_offers(tcp_port):
     # Pack the offer message into a binary format according to the protocol
     packet = struct.pack('!IbH32s', MAGIC_COOKIE, MESSAGE_TYPE_OFFER, tcp_port, SERVER_NAME.encode())
 
-    print(f"Server started, listening on IP address {socket.gethostbyname(socket.gethostname())}")
-
     # Continuously broadcast the offer message until the server is stopped
     while True:
         try:
@@ -45,14 +43,16 @@ def handle_client(client_socket, client_address):
             player_cards = [get_card(), get_card()]
             dealer_cards = [get_card(), get_card()]
 
-            player_sum = sum(c[2] for c in player_cards)
-            dealer_sum = sum(c[2] for c in dealer_cards)
+            player_sum = calculate_hand_value(player_cards)
+            dealer_sum = calculate_hand_value(dealer_cards)
 
             # Send initial cards to client
             status_msg = f"\nRound {r + 1}\nYour cards: {player_cards[0][0]},{player_cards[1][0]} (Sum: {player_sum})\n"
             status_msg += f"Dealer's visible card: {dealer_cards[0][0]}\n"
             payload = pack_game_payload(player_cards, dealer_cards)
             client_socket.send(payload)
+
+            time.sleep(0.3)
 
             # Player turn:
             while player_sum < 21:
@@ -62,8 +62,9 @@ def handle_client(client_socket, client_address):
                 if choice == 'h':
                     new_card = get_card()
                     player_cards.append(new_card)
-                    player_sum += new_card[2]
+                    player_sum = calculate_hand_value(player_cards)
                     client_socket.send(pack_game_payload(player_cards, dealer_cards))
+                    time.sleep(0.1)
                 else:
                     break
 
@@ -76,7 +77,7 @@ def handle_client(client_socket, client_address):
                 while dealer_sum < 17:
                     new_card = get_card()
                     dealer_cards.append(new_card)
-                    dealer_sum += new_card[2]
+                    dealer_sum = calculate_hand_value(dealer_cards)
                     client_socket.send(f"Dealer draws {new_card[0]}. Dealer sum: {dealer_sum}\n".encode())
 
                 # Determine winner:
@@ -87,7 +88,9 @@ def handle_client(client_socket, client_address):
                 else:
                     client_socket.send(b"It's a tie!\n")
 
-        client_socket.send(b"\nGame Over. Thanks for playing!")
+            time.sleep(0.1)
+
+        client_socket.send(b"\nGame Over. Thanks for playing!\n")
 
     except Exception as e:
         print(f"Error with client {client_address}: {e}")
@@ -110,6 +113,23 @@ def get_card():
 
     value = 11 if rank == 1 else (10 if rank >= 10 else rank)
     return rank, suit, value
+
+
+def calculate_hand_value(cards):
+    value = 0
+    aces = 0
+
+    for _, _, card_val in cards:
+        value += card_val
+        if card_val == 11:
+            aces += 1
+
+    while value > 21 and aces > 0:
+        value -= 10
+        aces -= 1
+
+    return value
+
 
 def main():
     # Create a TCP socket for handling game connections

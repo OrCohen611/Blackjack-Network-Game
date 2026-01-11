@@ -7,6 +7,17 @@ MESSAGE_TYPE_OFFER = 0x2
 MESSAGE_TYPE_REQUEST = 0x3
 TEAM_NAME = "Need-To-Choose".ljust(32, '\x00')
 
+
+def get_card_display(rank, suit):
+    rank_map = {1: "Ace", 11: "Jack", 12: "Queen", 13: "King"}
+    suit_map = {0: "Spades", 1: "Clubs", 2: "Hearts", 3: "Diamonds"}
+
+    rank_str = rank_map.get(rank, str(rank))
+    suit_str = suit_map.get(suit, "Unknown")
+
+    return f"{rank_str} of {suit_str}"
+
+
 def start_client():
     # Create a UDP socket
     client_udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -15,10 +26,9 @@ def start_client():
     # Bind the socket to the hardcoded UDP port
     client_udp_socket.bind(('', UDP_PORT))
 
-    print("Client started, listening for offer requests...")
-
     while True:
         try:
+            print("Client started, listening for offer requests...")
             # Receive message from server
             data, addr = client_udp_socket.recvfrom(1024)
 
@@ -81,7 +91,7 @@ def send_game_request(server_ip, server_port):
                 p_hand, d_hand = unpack_game_payload(data)
 
                 print("\n--- Current Game State ---")
-                p_display = [f"{c[0]} of {suits_symbols.get(c[1], 'Unknown')}" for c in p_hand]
+                p_display = [get_card_display(c[0], c[1]) for c in p_hand]
                 p_sum = sum(11 if c[0] == 1 else (10 if c[0] >= 10 else c[0]) for c in p_hand)
                 print(f"Your cards: {p_display} (Sum: {p_sum})")
                 print(f"Dealer's visible card: {d_hand[0][0]} of {suits_symbols.get(d_hand[0][1], 'Unknown')}")
