@@ -10,6 +10,11 @@ MESSAGE_TYPE_OFFER = 0x2
 SERVER_NAME = "Nave's-Angels".ljust(32, '\x00')
 
 
+def build_deck():
+    deck = [(rank, suit) for rank in range(1, 14) for suit in range(4)]
+    random.shuffle(deck)
+    return deck
+
 def send_udp_offers(tcp_port):
     """
     handle the discovery phase of the protocol.
@@ -52,17 +57,18 @@ def handle_client(client_socket, client_address):
 
         # Start the game loop for the requested number of rounds
         for r in range(num_rounds):
+            deck = build_deck()
             # Deal initial cards
-            player_cards = [get_card(), get_card()]
-            dealer_cards = [get_card(), get_card()]
+            player_cards = [get_card(deck), get_card(deck)]
+            dealer_cards = [get_card(deck), get_card(deck)]
 
             # Calculate the initial sums
             player_sum = calculate_hand_value(player_cards)
             dealer_sum = calculate_hand_value(dealer_cards)
 
             # Send initial cards to client
-            status_msg = f"\nRound {r + 1}\nYour cards: {player_cards[0][0]},{player_cards[1][0]} (Sum: {player_sum})\n"
-            status_msg += f"Dealer's visible card: {dealer_cards[0][0]}\n"
+            # status_msg = f"\nRound {r + 1}\nYour cards: {player_cards[0][0]},{player_cards[1][0]} (Sum: {player_sum})\n"
+            # status_msg += f"Dealer's visible card: {dealer_cards[0][0]}\n"
             payload = pack_game_payload(player_cards, dealer_cards)
             client_socket.send(payload)
 
@@ -76,7 +82,7 @@ def handle_client(client_socket, client_address):
 
                 if choice == 'h':
                     # Player chose Hit: Draw a new card
-                    new_card = get_card()
+                    new_card = get_card(deck)
                     player_cards.append(new_card)
 
                     # Recalculate the sum to check if they busted or got 21
@@ -98,7 +104,7 @@ def handle_client(client_socket, client_address):
 
                 # The dealer must hit until they reach at least 17
                 while dealer_sum < 17:
-                    new_card = get_card()
+                    new_card = get_card(deck)
                     dealer_cards.append(new_card)
                     dealer_sum = calculate_hand_value(dealer_cards)
 
@@ -140,14 +146,15 @@ def pack_game_payload(player_cards, dealer_cards):
     return header + cards_bytes
 
 
-def get_card():
+def get_card(deck):
     """
     Helper function to generate a random card.
     It simulates drawing from an infinite deck.
     """
     # generate a random number for the Rank (1-13) and the Suit (0-3)
-    rank = random.randint(1, 13)
-    suit = random.randint(0, 3)
+    card = deck.pop()
+    rank = card[0]
+    suit = card[1]
 
     # calculate the card's value for the game logic
     value = 11 if rank == 1 else (10 if rank >= 10 else rank)
@@ -159,26 +166,20 @@ def calculate_hand_value(cards):
     Function that calculates the total sum of a hand
     """
     value = 0
-    aces = 0
 
     # iterate through the cards to calculate the initial sum
     for _, _, card_val in cards:
         value += card_val
-        if card_val == 11:
-            aces += 1
-
-    while value > 21 and aces > 0:
-        value -= 10
-        aces -= 1
 
     return value
 
 
 def main():
-    # Create a TCP socket for handling game connections
-    server_tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_tcp_socket = None
 
     try:
+        # Create a TCP socket for handling game connections
+        server_tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # Bind to an empty string to listen on all interfaces
         server_tcp_socket.bind(('', 0))
         tcp_port = server_tcp_socket.getsockname()[1]
@@ -204,7 +205,8 @@ def main():
     except Exception as e:
         print(f"Server error: {e}")
     finally:
-        server_tcp_socket.close()
+        if server_tcp_socket:
+            server_tcp_socket.close()
 
 if __name__ == "__main__":
     main()

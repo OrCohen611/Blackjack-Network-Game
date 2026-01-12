@@ -92,6 +92,11 @@ def send_game_request(server_ip, server_port):
     """
     function to establish the TCP connection and manages the game loop
     """
+    wins = 0
+    losses = 0
+    round = 0
+
+    client_tcp_socket = None
 
     try:
         # Ask the user for the number of rounds
@@ -119,15 +124,17 @@ def send_game_request(server_ip, server_port):
                 # parse the binary data into card lists
                 p_hand, d_hand = unpack_game_payload(data)
 
-                print("\n--- Current Game State ---")
+                if len(p_hand) == 2 and len(d_hand) == 2:
+                    round += 1
+                    print(f"--------- Round {round}/{num_rounds} ---------")
 
+                print(f"\n------- Game State -------")
                 # convert the raw card numbers into readable strings for display
                 p_display = [get_card_display(c[0], c[1]) for c in p_hand]
                 # calculate the sum of the cards to show the user their current status
                 p_sum = sum(11 if c[0] == 1 else (10 if c[0] >= 10 else c[0]) for c in p_hand)
                 print(f"Your cards: {p_display} (Sum: {p_sum})")
-                print(f"Dealer's visible card: {d_hand[0][0]} of {suits_symbols.get(d_hand[0][1], 'Unknown')}")
-                print("------------------------------------------\n")
+                print(f"Dealer's visible card: {get_card_display(d_hand[0][0], d_hand[0][1])}")
             else:
                 message = data.decode(errors='ignore')
                 print(message, end="")
@@ -137,13 +144,22 @@ def send_game_request(server_ip, server_port):
                     action = input().strip()
                     client_tcp_socket.send(action.encode())
 
+                if "You win" in message:
+                    wins += 1
+                if "Dealer wins" in message or "You lose" in message:
+                    losses += 1
+
                 # If the game is over - the server will close the connection and we break
                 if "Game Over" in message:
+                    win_rate = wins / num_rounds
+                    print(f"Finished playing {num_rounds} rounds, win rate: {win_rate:.3f}")
                     break
 
     except Exception as e:
         print(f"Failed to connect or send request: {e}")
-
+    finally:
+        if client_tcp_socket:
+            client_tcp_socket.close()
 
 if __name__ == "__main__":
     start_client()
